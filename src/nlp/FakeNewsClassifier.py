@@ -83,8 +83,8 @@ class FakeNewsClassifier:
         self.upload_model()
 
 if __name__ == '__main__':
-    true_csv = 'True.csv'
-    fake_csv = 'Fake.csv'
+    true_csv = 'data/True.csv'
+    fake_csv = 'data/Fake.csv'
     pretrained_model_name = 'roberta-base'
 
     classifier = FakeNewsClassifier(true_csv, fake_csv, pretrained_model_name)
