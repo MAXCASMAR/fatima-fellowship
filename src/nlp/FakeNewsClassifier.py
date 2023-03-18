@@ -80,12 +80,15 @@ class FakeNewsClassifier:
         self.train_model(X_train, y_train)
         auc = self.evaluate_model(X_test, y_test)
         print(f'AUC: {auc}')
+        print("perro")
         self.upload_model()
 
 if __name__ == '__main__':
-    true_csv = 'data/True.csv'
-    fake_csv = 'data/Fake.csv'
+    true_csv = '/workspaces/fatima-fellowship/src/nlp/data/True.csv'
+    fake_csv = '/workspaces/fatima-fellowship/src/nlp/data/Fake.csv'
+    print("perro")
     pretrained_model_name = 'roberta-base'
 
     classifier = FakeNewsClassifier(true_csv, fake_csv, pretrained_model_name)
+    print("perro1")
     classifier.run()
