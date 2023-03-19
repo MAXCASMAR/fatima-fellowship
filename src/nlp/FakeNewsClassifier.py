@@ -103,6 +103,7 @@ if __name__ == '__main__':
     true_csv = '/workspaces/fatima-fellowship/src/nlp/data/True.csv'
     fake_csv = '/workspaces/fatima-fellowship/src/nlp/data/Fake.csv'
     pretrained_model_name = 'roberta-base'
+    pretrained_model_name = "ghanashyamvtatti/roberta-fake-news"
 
     classifier = FakeNewsClassifier(true_csv, fake_csv, pretrained_model_name)
     print("perro")
