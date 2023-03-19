@@ -10,11 +10,11 @@ from tqdm.notebook import tqdm
 from torch import nn
 from collections import deque,namedtuple
 
-os.system('apt update')
-os.system('apt-get install python-opengl -y')
-os.system('apt install xvfb -y')
-os.system('pip install pyvirtualdisplay')
-os.system('pip install piglet')
+#os.system('apt update')
+#os.system('apt-get install python-opengl -y')
+#os.system('apt install xvfb -y')
+#os.system('pip install pyvirtualdisplay')
+#os.system('pip install piglet')
 
 import glob
 import io
@@ -24,6 +24,30 @@ from IPython.display import HTML
 from IPython import display as ipythondisplay
 from pyvirtualdisplay import Display
 #from gym.wrappers import Monitor
+
+
+display = Display(visible=0, size=(1400, 900))
+display.start()
+
+#if type(os.environ.get("DISPLAY")) is not str or len(os.environ.get("DISPLAY"))==0:
+#    os.system('!bash ../xvfb start')
+#    os.system('%env DISPLAY=:1')
+      
+def show_videos():
+  mp4list = glob.glob('video/*.mp4')
+  mp4list.sort()
+  for mp4 in mp4list:
+    print(f"\nSHOWING VIDEO {mp4}")
+    video = io.open(mp4, 'r+b').read()
+    encoded = base64.b64encode(video)
+    ipythondisplay.display(HTML(data='''<video alt="test" autoplay 
+                loop controls style="height: 400px;">
+                <source src="data:video/mp4;base64,{0}" type="video/mp4" />
+             </video>'''.format(encoded.decode('ascii'))))
+    
+def wrap_env(env, video_callable=None):
+  env = Monitor(env, './video', force=True, video_callable=video_callable)
+  return env   
 
 # Implement Deep Q network
 class DQN(nn.Module):
@@ -181,14 +205,6 @@ def update_step(policy_net, target_net, replay_mem, gamma, optimizer, loss_fn, b
 
 
 if __name__ == '__main__':
-    # action and observation spaces
-    env = gym.make('Acrobot-v1')
-    
-    action_space = env.action_space # Discrete(3) [0, 1, 2]
-    observation_space = env.observation_space # Box([ -1.        -1.        -1.        -1.       -12.566371 -28.274334], [ 1.        1.        1.        1.       12.566371 28.274334], (6,), float32)
-    # each observation is an array of 6 numbers (float32)
-    print('Action space:', action_space)
-    print('Observation space:', observation_space)
 
     ### Define exploration profile
     initial_value = 5
@@ -198,7 +214,7 @@ if __name__ == '__main__':
 
         # environment
     env = gym.make('Acrobot-v1') 
-    env.seed(0) # Set a random seed for the environment 
+    #env.seed(0) # Set a random seed for the environment 
 
     state_space_dim = env.observation_space.shape[0]
     action_space_dim = env.action_space.n
@@ -234,9 +250,9 @@ if __name__ == '__main__':
     loss_fn = nn.SmoothL1Loss()
 
     env = gym.make('Acrobot-v1') 
-    env.seed(0) 
+    #env.seed(0) 
 
-    env = wrap_env(env, video_callable=lambda episode_id: episode_id % 100 == 0) # Save a video every 100 episodes
+    #env = wrap_env(env, video_callable=lambda episode_id: episode_id % 100 == 0) # Save a video every 100 episodes
 
     plotting_rewards=[]
 
