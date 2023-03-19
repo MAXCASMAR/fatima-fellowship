@@ -1,2 +1,4 @@
+torch
 sklearn
 transformers
+huggingface_hub

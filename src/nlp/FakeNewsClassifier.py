@@ -1,9 +1,27 @@
 import pandas as pd
 import numpy as np
 import re
+import torch
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import roc_auc_score
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, TrainingArguments, Trainer
+
+class FakeNewsDataset(torch.utils.data.Dataset):
+    def __init__(self, texts, labels, tokenizer, max_length):
+        self.texts = texts
+        self.labels = labels
+        self.tokenizer = tokenizer
+        self.max_length = max_length
+
+    def __len__(self):
+        return len(self.texts)
+
+    def __getitem__(self, idx):
+        text = self.texts[idx]
+        label = self.labels[idx]
+        encoding = self.tokenizer(text, padding='max_length', truncation=True, max_length=self.max_length, return_tensors='pt')
+        encoding['label'] = torch.tensor(label)
+        return encoding
 
 class FakeNewsClassifier:
     def __init__(self, true_csv, fake_csv, model_name):
@@ -52,8 +70,7 @@ class FakeNewsClassifier:
             seed=42,
         )
 
-        train_dataset = self.tokenizer(X_train.tolist(), padding=True, truncation=True, max_length=512, return_tensors='pt')
-        train_dataset['label'] = torch.tensor(y_train.tolist())
+        train_dataset = FakeNewsDataset(X_train, y_train, self.tokenizer, max_length=512)
 
         trainer = Trainer(
             model=self.model,
@@ -64,7 +81,7 @@ class FakeNewsClassifier:
         trainer.train()
 
     def evaluate_model(self, X_test, y_test):
-        test_dataset = self.tokenizer(X_test.tolist(), padding=True, truncation=True, max_length=512, return_tensors='pt')
+        test_dataset = FakeNewsDataset(X_test, y_test, self.tokenizer, max_length=512)
         logits = self.model(test_dataset['input_ids'], attention_mask=test_dataset['attention_mask']).logits
         preds = torch.sigmoid(logits).numpy()
 
@@ -72,7 +89,7 @@ class FakeNewsClassifier:
         return auc
 
     def upload_model(self):
-        self.model.push_to_hub(self.model_name)
+        self.model.push_to_hub('fake-news-classifier')
 
     def run(self):
         df = self.load_and_preprocess_data()
@@ -80,15 +97,15 @@ class FakeNewsClassifier:
         self.train_model(X_train, y_train)
         auc = self.evaluate_model(X_test, y_test)
         print(f'AUC: {auc}')
-        print("perro")
         self.upload_model()
 
 if __name__ == '__main__':
     true_csv = '/workspaces/fatima-fellowship/src/nlp/data/True.csv'
     fake_csv = '/workspaces/fatima-fellowship/src/nlp/data/Fake.csv'
-    print("perro")
     pretrained_model_name = 'roberta-base'
 
     classifier = FakeNewsClassifier(true_csv, fake_csv, pretrained_model_name)
-    print("perro1")
+    print("perro")
     classifier.run()
+
+
