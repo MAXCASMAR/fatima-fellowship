@@ -97,7 +97,89 @@ def choose_action_epsilon_greedy(net, state, epsilon):
         action = best_action
         
     return action, net_out.cpu().numpy()
+
+# Softmax policy
+# Choose the optimal action, based on a distribution obtained by applying a softmax to the 
+# estimated Q-values, given the temperature. Two cases: 1) the higher the temperature, the more
+# the distribution will converte to a random uniform distribution
+# 2) at zero temperature, the policy will always choose the action with the highest Q-value
+
+
+def choose_action_softmax(net, state, temperature):
     
+    if temperature < 0:
+        raise Exception('The temperature value must be greater than or equal to 0 ')
+        
+    # If the temperature is 0, just select the best action using the eps-greedy policy with epsilon = 0
+    if temperature == 0:
+        return choose_action_epsilon_greedy(net, state, 0)
+    
+    # Evaluate the network output from the current state
+    with torch.no_grad():
+        net.eval()
+        state = torch.tensor(state, dtype=torch.float32)
+        net_out = net(state)
+
+    # Apply softmax with temp
+    temperature = max(temperature, 1e-8) # set a minimum to the temperature for numerical stability
+    softmax_out = nn.functional.softmax(net_out/temperature, dim=0).cpu().numpy()
+                
+    # Sample the action using softmax output as mass pdf
+    all_possible_actions = np.arange(0, softmax_out.shape[-1])
+    # this samples a random element from "all_possible_actions" with the probability distribution p (softmax_out in this case)
+    action = np.random.choice(all_possible_actions,p=softmax_out)
+    
+    return action, net_out.cpu().numpy()
+
+
+# Exploration profile
+# An exponentially decreasing exploration profile using the softmax policy
+# softmax_temperature = initial_temperature * exponential_decay^i
+
+
+def update_step(policy_net, target_net, replay_mem, gamma, optimizer, loss_fn, batch_size):
+        
+    # Sample from the replay memory
+    batch = replay_mem.sample(batch_size)
+    batch_size = len(batch)
+
+    # Create tensors for each element of the batch
+    states      = torch.tensor([s[0] for s in batch], dtype=torch.float32, device=device)
+    actions     = torch.tensor([s[1] for s in batch], dtype=torch.int64, device=device)
+    rewards     = torch.tensor([s[3] for s in batch], dtype=torch.float32, device=device)
+
+    # Compute a mask of non-final states (all the elements where the next state is not None)
+    non_final_next_states = torch.tensor([s[2] for s in batch if s[2] is not None], dtype=torch.float32, device=device) # the next state can be None if the game has ended
+    non_final_mask = torch.tensor([s[2] is not None for s in batch], dtype=torch.bool)
+
+    # Compute Q values 
+    policy_net.train()
+    q_values = policy_net(states)
+    # Select the proper Q value for the corresponding action taken Q(s_t, a)
+    state_action_values = q_values.gather(1, actions.unsqueeze(1).cuda())
+
+    # Compute the value function of the next states using the target network V(s_{t+1}) = max_a( Q_target(s_{t+1}, a)) )
+    with torch.no_grad():
+      target_net.eval()
+      q_values_target = target_net(non_final_next_states)
+    next_state_max_q_values = torch.zeros(batch_size, device=device)
+    next_state_max_q_values[non_final_mask] = q_values_target.max(dim=1)[0].detach()
+
+    # Compute the expected Q values
+    expected_state_action_values = rewards + (next_state_max_q_values * gamma)
+    expected_state_action_values = expected_state_action_values.unsqueeze(1)# Set the required tensor shape
+
+    # Compute the Huber loss
+    loss = loss_fn(state_action_values, expected_state_action_values)
+
+    # Optimize the model
+    optimizer.zero_grad()
+    loss.backward()
+    # Apply gradient clipping 
+    nn.utils.clip_grad_norm_(policy_net.parameters(), 2)
+    optimizer.step()
+
+
 if __name__ == '__main__':
     # action and observation spaces
     env = gym.make('Acrobot-v1')
@@ -108,3 +190,96 @@ if __name__ == '__main__':
     print('Action space:', action_space)
     print('Observation space:', observation_space)
 
+    ### Define exploration profile
+    initial_value = 5
+    num_iterations = 800
+    exp_decay = np.exp(-np.log(initial_value) / num_iterations * 6) 
+    exploration_profile = [initial_value * (exp_decay ** i) for i in range(num_iterations)]
+
+        # environment
+    env = gym.make('Acrobot-v1') 
+    env.seed(0) # Set a random seed for the environment 
+
+    state_space_dim = env.observation_space.shape[0]
+    action_space_dim = env.action_space.n
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    print(f"STATE SPACE SIZE: {state_space_dim}")
+    print(f"ACTION SPACE SIZE: {action_space_dim}")
+
+    # Set random seeds
+    torch.manual_seed(0)
+    np.random.seed(0)
+
+    gamma = 0.99  
+    replay_memory_capacity = 10000   
+    lr = 1e-3
+    target_net_update_steps = 10   
+    batch_size = 256   
+    bad_state_penalty = 0   
+    min_samples_for_training = 1000   
+
+    # replay memory
+    replay_mem = ReplayMemory(replay_memory_capacity)    
+
+    # policy network
+    policy_net = DQN(state_space_dim, action_space_dim).to(device)
+
+    # target network with the same weights of the policy network
+    target_net = DQN(state_space_dim, action_space_dim).to(device)
+    target_net.load_state_dict(policy_net.state_dict()) # This will copy the weights of the policy network to the target network
+
+    optimizer = torch.optim.Adam(policy_net.parameters(), lr=lr) # The optimizer will update ONLY the parameters of the policy network
+
+    loss_fn = nn.SmoothL1Loss()
+
+    env = gym.make('Acrobot-v1') 
+    env.seed(0) 
+
+    env = wrap_env(env, video_callable=lambda episode_id: episode_id % 100 == 0) # Save a video every 100 episodes
+
+    plotting_rewards=[]
+
+    for episode_num, tau in enumerate(tqdm(exploration_profile)):
+
+        state = env.reset()
+        score = 0
+        done = False
+
+        while not done:
+
+            # Choose the action following the policy
+            action, q_values = choose_action_softmax(policy_net, state, temperature=tau)
+            
+            next_state, reward, done, info = env.step(action)
+
+            # Update the final score (-1 for each step)
+            score += reward
+
+            if done:  
+                reward += bad_state_penalty
+                next_state = None
+            
+            # Update the replay memory
+            replay_mem.push(state, action, next_state, reward)
+
+            # Update the network
+            if len(replay_mem) > min_samples_for_training: # we enable the training only if we have enough samples in the replay memory, otherwise the training will use the same samples too often
+                update_step(policy_net, target_net, replay_mem, gamma, optimizer, loss_fn, batch_size)
+
+            # Visually render the environment 
+            env.render()
+
+            # Set the current state for the next iteration
+            state = next_state
+
+        # Update the target network every target_net_update_steps episodes
+        if episode_num % target_net_update_steps == 0:
+            print('Updating target network...')
+            target_net.load_state_dict(policy_net.state_dict()) # This will copy the weights of the policy network to the target network
+        
+        plotting_rewards.append(score)
+        print(f"EPISODE: {episode_num + 1} - FINAL SCORE: {score} - Temperature: {tau}") # Print the final score
+
+    env.close()
+    show_videos()
