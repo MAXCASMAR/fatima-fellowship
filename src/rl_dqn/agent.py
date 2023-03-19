@@ -26,8 +26,8 @@ from pyvirtualdisplay import Display
 #from gym.wrappers import Monitor
 
 
-display = Display(visible=0, size=(1400, 900))
-display.start()
+#display = Display(visible=0, size=(1400, 900))
+#display.start()
 
 #if type(os.environ.get("DISPLAY")) is not str or len(os.environ.get("DISPLAY"))==0:
 #    os.system('!bash ../xvfb start')
@@ -57,7 +57,7 @@ class DQN(nn.Module):
         self.action_space_dim = action_space_dim
 
         self.fc1 = nn.Linear(self.state_space_dim, 128)
-        self.fc2 = nn.Linear(64, 128)
+        self.fc2 = nn.Linear(128, 128)
         self.head = nn.Linear(128, self.action_space_dim)
 
     def forward(self, x):
@@ -180,7 +180,7 @@ def update_step(policy_net, target_net, replay_mem, gamma, optimizer, loss_fn, b
     policy_net.train()
     q_values = policy_net(states)
     # Select the proper Q value for the corresponding action taken Q(s_t, a)
-    state_action_values = q_values.gather(1, actions.unsqueeze(1).cuda())
+    state_action_values = q_values.gather(1, actions.unsqueeze(1))
 
     # Compute the value function of the next states using the target network V(s_{t+1}) = max_a( Q_target(s_{t+1}, a)) )
     with torch.no_grad():
@@ -284,7 +284,7 @@ if __name__ == '__main__':
                 update_step(policy_net, target_net, replay_mem, gamma, optimizer, loss_fn, batch_size)
 
             # Visually render the environment 
-            env.render()
+            #env.render()
 
             # Set the current state for the next iteration
             state = next_state
@@ -298,4 +298,4 @@ if __name__ == '__main__':
         print(f"EPISODE: {episode_num + 1} - FINAL SCORE: {score} - Temperature: {tau}") # Print the final score
 
     env.close()
-    show_videos()
+    #show_videos()
