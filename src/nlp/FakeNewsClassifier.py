@@ -4,7 +4,15 @@ import re
 import torch
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import roc_auc_score
+import os
+os.system('pip install transformers')
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, TrainingArguments, Trainer
+
+
+
+def preprocess_text(text):
+        text = re.sub(r'http\S+', '', text) # Remove URLs
+        return text
 
 class FakeNewsDataset(torch.utils.data.Dataset):
     def __init__(self, texts, labels, tokenizer, max_length):
@@ -19,7 +27,8 @@ class FakeNewsDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         text = self.texts[idx]
         label = self.labels[idx]
-        encoding = self.tokenizer(text, padding='max_length', truncation=True, max_length=self.max_length, return_tensors='pt')
+        encoding = self.tokenizer(text, padding='max_length', truncation=True, max_length=self.max_length)
+        encoding = {key: torch.tensor(val) for key, val in encoding.items()}
         encoding['label'] = torch.tensor(label)
         return encoding
 
@@ -28,12 +37,7 @@ class FakeNewsClassifier:
         self.true_csv = true_csv
         self.fake_csv = fake_csv
         self.model_name = model_name
-        self.tokenizer, self.model = self.init_model()
-
-    @staticmethod
-    def preprocess_text(text):
-        text = re.sub(r'http\S+', '', text) # Remove URLs
-        return text
+        self.tokenizer, self.model = self.init_model()    
 
     def load_and_preprocess_data(self):
         true_df = pd.read_csv(self.true_csv)
@@ -102,11 +106,63 @@ class FakeNewsClassifier:
 if __name__ == '__main__':
     true_csv = '/workspaces/fatima-fellowship/src/nlp/data/True.csv'
     fake_csv = '/workspaces/fatima-fellowship/src/nlp/data/Fake.csv'
-    pretrained_model_name = 'roberta-base'
-    pretrained_model_name = "ghanashyamvtatti/roberta-fake-news"
+    #pretrained_model_name = 'roberta-base'
+    #pretrained_model_name = "ghanashyamvtatti/roberta-fake-news"
 
-    classifier = FakeNewsClassifier(true_csv, fake_csv, pretrained_model_name)
-    print("perro")
-    classifier.run()
+
+    true_df = pd.read_csv(true_csv)
+    fake_df = pd.read_csv(fake_csv)
+
+    true_df['label'] = 1
+    fake_df['label'] = 0
+
+    df = pd.concat([true_df, fake_df], ignore_index=True)
+    df = df.sample(frac=1, random_state=42).reset_index(drop=True) # Shuffle data
+    df['text'] = df['text'].apply(preprocess_text)
+    
+    X_train, X_test, y_train, y_test = train_test_split(df['text'], df['label'], test_size=0.2, random_state=42, stratify=df['label'])
+
+    X_train = X_train.reset_index(drop=True)
+    X_test = X_test.reset_index(drop=True)
+    y_train = y_train.reset_index(drop=True)
+    y_test = y_test.reset_index(drop=True)
+    
+    tokenizer = AutoTokenizer.from_pretrained("hamzab/roberta-fake-news-classification")
+    model = AutoModelForSequenceClassification.from_pretrained("hamzab/roberta-fake-news-classification")
+
+    print("perra")
+
+    train_dataset = FakeNewsDataset(X_train, y_train, tokenizer, max_length=512)
+    test_dataset = FakeNewsDataset(X_test, y_test, tokenizer, max_length=512)
+    
+    training_args = TrainingArguments(
+            output_dir='./results',
+            num_train_epochs=3,
+            per_device_train_batch_size=16,
+            logging_steps=100,
+            save_strategy='no',
+            evaluation_strategy='no',
+            load_best_model_at_end=False,
+            metric_for_best_model=None,
+            seed=42,
+        )
+    trainer = Trainer(
+            model=model,
+            args=training_args,
+            train_dataset=train_dataset,
+        )
+    trainer.train()
+    trainer.save_model("fatima-train-fake-news-classifier")
+    
+    #logits = self.model(test_dataset['input_ids'], attention_mask=test_dataset['attention_mask']).logits
+    #preds = torch.sigmoid(logits).numpy()
+
+    #auc = roc_auc_score(y_test, preds)
+
+    
+
+    #classifier = FakeNewsClassifier(true_csv, fake_csv, pretrained_model_name)
+    #print("perro")
+    #classifier.run()
 
 
